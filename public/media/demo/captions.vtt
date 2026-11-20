@@ -1,0 +1,70 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:03.591
+Read the sentence: the animal crossed the street because it
+
+00:00:03.591 --> 00:00:05.386
+was tired. To interpret it,
+
+00:00:05.386 --> 00:00:07.900
+you connect that word back to animal.
+
+00:00:07.900 --> 00:00:11.490
+Self-attention gives a model a way to learn connections like
+
+00:00:11.490 --> 00:00:14.363
+this. Each token gathers information from other tokens,
+
+00:00:14.363 --> 00:00:16.517
+with different weights for different relationships.
+
+00:00:16.517 --> 00:00:18.238
+Each token produces a query,
+
+00:00:18.238 --> 00:00:19.959
+a key, and a value.
+
+00:00:19.959 --> 00:00:23.402
+The query is compared with the keys to score possible
+
+00:00:23.402 --> 00:00:26.844
+connections. Softmax turns those scores into weights that add up
+
+00:00:26.844 --> 00:00:30.287
+to one. A weighted sum of the values gives the
+
+00:00:30.287 --> 00:00:31.664
+token its new representation.
+
+00:00:31.684 --> 00:00:35.205
+A single set of weights gives one view of a
+
+00:00:35.205 --> 00:00:38.374
+sentence. The Transformer runs several attention heads in parallel,
+
+00:00:38.374 --> 00:00:40.487
+each with its own learned projections.
+
+00:00:40.487 --> 00:00:44.008
+It concatenates their outputs and mixes them with a learned
+
+00:00:44.008 --> 00:00:47.529
+matrix, so one token can incorporate several kinds of information.
+
+00:00:47.529 --> 00:00:51.890
+Earlier recurrent translation models processed a sentence one position at
+
+00:00:51.890 --> 00:00:56.252
+a time. The Transformer encoder computes representations for all positions
+
+00:00:56.252 --> 00:00:57.996
+in a layer together.
+
+00:00:57.996 --> 00:01:00.613
+In the paper's English-to-German translation experiment,
+
+00:01:00.613 --> 00:01:02.794
+the model reached 28.4 BLEU.
+
+00:01:02.794 --> 00:01:07.155
+The decoder still generates translated words one at a time.

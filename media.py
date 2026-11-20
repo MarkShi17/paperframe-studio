@@ -1,4 +1,6 @@
+import base64
 import math
+import re
 import os
 import subprocess
 import tempfile
@@ -45,7 +47,7 @@ def lines(draw, text, face, width):
             rows[-1] = candidate
     return rows
 
-def poster(scene, index, count, path):
+def poster(scene, index, count, path, stage=None):
     im = Image.new("RGB", (1280,720), INK)
     d = ImageDraw.Draw(im)
     for x in range(0,1280,32):
@@ -61,7 +63,7 @@ def poster(scene, index, count, path):
     if scene.get("art") == "attention":
         xs=[152,395,635,875,1122]
         for i,x in enumerate(xs):
-            if i==3: continue
+            if i==3 or (stage is not None and (stage==0 or (stage==1 and i!=0))): continue
             height=[205,145,100,0,129][i]
             p=[(x+(875-x)*t/120,465-height*math.sin(math.pi*t/120)) for t in range(121)]
             color=GOLD if i==0 else "#8782c2"
@@ -70,16 +72,35 @@ def poster(scene, index, count, path):
         for i,(x,label) in enumerate(zip(xs,labels)):
             d.rounded_rectangle((x-92,474,x+92,542), radius=13, fill=GOLD if i==3 else "#34355f",outline=GOLD if i in (0,3) else "#7775a3",width=2)
             d.text((x,508),label,font=font(30),fill=INK if i==3 else "white",anchor="mm")
-        d.text((514,225),"illustrative attention weight",font=font(20),fill=GOLD,anchor="mm")
+        note = "Read the tokens" if stage==0 else ("Possible referent" if stage==1 else "Illustrative attention weights")
+        d.text((514,225),note,font=font(22),fill=GOLD,anchor="mm")
+    elif scene.get("art") == "heads":
+        colors=["#c0bcff","#ffda95","#a6dae7"]
+        for i,color in enumerate(colors):
+            y=309+i*75
+            lit=stage is None or stage>0 or i==0
+            ink=color if lit else "#686985"
+            d.line([(253,397),(398,y),(516,y)], fill=ink,width=4)
+            d.rounded_rectangle((516,y-23,734,y+23),radius=12,fill=ink)
+            d.text((625,y),f"Head {i+1}",font=font(23,True),fill=INK,anchor="mm")
+            if stage is None or stage>=2:
+                d.line([(735,y),(849,y),(982,397)],fill=ink,width=4)
+        for x,label in [(190,"Tokens"),(1045,"Mix")]:
+            d.ellipse((x-67,330,x+67,464),fill="#34355f",outline=LAV,width=3)
+            d.text((x,397),label,font=font(25),fill="white",anchor="mm")
+        d.text((640,545),"Independent attention patterns",font=font(24),fill=LAV,anchor="mm")
     else:
         step=1144/len(labels)
         for i,label in enumerate(labels):
             x=68+i*step
-            d.rounded_rectangle((x,300,x+step-38,515),radius=20,fill=["#d7d5fc","#b4b7ed","#ffdc9d"][i%3])
-            d.text((x+23,324),f"{i+1:02}",font=font(21),fill=INK)
+            lit=stage is None or stage>=i
+            card=["#d7d5fc","#b4b7ed","#ffdc9d"][i%3] if lit else "#303254"
+            fg=INK if lit else "#a7a7bc"
+            d.rounded_rectangle((x,300,x+step-38,515),radius=20,fill=card)
+            d.text((x+23,324),f"{i+1:02}",font=font(21),fill=fg)
             nft=font(34,True)
             for n,row in enumerate(lines(d,label,nft,step-84)[:3]):
-                d.text((x+23,373+n*41),row,font=nft,fill=INK)
+                d.text((x+23,373+n*41),row,font=nft,fill=fg)
             if i<len(labels)-1:
                 d.line((x+step-34,408,x+step-8,408),fill=LAV,width=3)
                 d.polygon([(x+step-8,402),(x+step-1,408),(x+step-8,414)],fill=LAV)
@@ -91,37 +112,90 @@ def poster(scene, index, count, path):
 def run(args):
     return subprocess.run(args,check=True,capture_output=True,timeout=120).stdout.decode().strip()
 
+def duration_of(path):
+    return float(run(["ffprobe","-v","error","-show_entries","format=duration","-of","csv=p=0",str(path)]))
+
+
+def captions_for(text, duration, alignment=None):
+    # Keep each cue short enough to read without covering the diagram.
+    words = list(re.finditer(r"\S+",text))
+    ends = (alignment or {}).get("character_end_times_seconds", [])
+    aligned = "".join((alignment or {}).get("characters",[])) == text and len(ends)==len(text)
+    cues = []
+    start,first = 0.0,0
+    for i, word in enumerate(words):
+        length = i-first+1
+        if length >= 10 or i==len(words)-1 or (length>=4 and word.group().endswith((".", "?", "!", ";", ","))):
+            end = ends[word.end()-1] if aligned else duration*(i+1)/len(words)
+            if i==len(words)-1: end=duration
+            cues.append((start,end,text[words[first].start():word.end()]))
+            start,first = end,i+1
+    return cues
+
+
+def timestamp(seconds):
+    milliseconds=round(seconds*1000)
+    minutes,ms=divmod(milliseconds,60000)
+    sec,ms=divmod(ms,1000)
+    hours,minutes=divmod(minutes,60)
+    return f"{hours:02}:{minutes:02}:{sec:02}.{ms:03}"
+
+
+def voice_audio(work, i, text, key, voice):
+    if key:
+        voice_id=setting("ELEVENLABS_VOICE_ID","JBFqnCBsd6RMkjVDRZzb")
+        response=requests.post(f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps",
+            headers={"xi-api-key":key},json={"text":text,"model_id":"eleven_multilingual_v2"},timeout=60)
+        if not response.ok:
+            raise ValueError(f"ElevenLabs returned HTTP {response.status_code}. Check the key, voice access and credits.")
+        payload=response.json()
+        audio=work/f"voice{i}.mp3"
+        audio.write_bytes(base64.b64decode(payload["audio_base64"],validate=True))
+        return audio,payload.get("alignment")
+    if voice=="eSpeak":
+        audio=work/f"voice{i}.wav"
+        run(["espeak-ng","-s","160","-w",str(audio),"--",text])
+    else:
+        audio=work/f"voice{i}.aiff"
+        run(["say","-r","169","-o",str(audio),"--",text])
+    return audio,None
+
+
 def render(identifier, scenes, progress):
     directory=MEDIA/identifier
     directory.mkdir(parents=True,exist_ok=True)
     key=setting("ELEVENLABS_API_KEY")
     voice="ElevenLabs" if key else ("macOS" if shutil.which("say") else "eSpeak")
-    elapsed=0
+    elapsed=0.0
+    captions=["WEBVTT", ""]
     with tempfile.TemporaryDirectory() as tmp:
         work=Path(tmp)
         for i,s in enumerate(scenes):
             progress(f"Voicing scene {i+1} of {len(scenes)} · {voice}")
-            audio=work/f"voice{i}.{'mp3' if key else 'aiff'}"
-            if key:
-                response=requests.post("https://api.elevenlabs.io/v1/text-to-speech/"+setting("ELEVENLABS_VOICE_ID","JBFqnCBsd6RMkjVDRZzb"), headers={"xi-api-key":key}, json={"text":s["narration"],"model_id":"eleven_multilingual_v2"},timeout=60)
-                if not response.ok:
-                    raise ValueError(f"ElevenLabs returned HTTP {response.status_code}. Check your key, voice access and credits.")
-                audio.write_bytes(response.content)
-            elif voice=="eSpeak":
-                audio=work/f"voice{i}.wav"
-                run(["espeak-ng","-s","160","-w",str(audio),s["narration"]])
-            else:
-                run(["say","-r","169","-o",str(audio),s["narration"]])
-            progress(f"Rendering diagram {i+1} of {len(scenes)}")
-            png=directory/f"{i}.png"
-            poster(s,i,len(scenes),png)
+            audio,alignment=voice_audio(work,i,s["narration"],key,voice)
+            spoken=duration_of(audio)
+            if spoken<0.5: raise ValueError("Speech synthesis returned empty audio.")
+            progress(f"Animating diagram {i+1} of {len(scenes)}")
+            poster(s,i,len(scenes),directory/f"{i}.png")
+            files=[]
+            stages=3 if s.get("art") in ("attention","heads") else min(3,len(s["labels"]))
+            for stage in range(stages):
+                frame=work/f"frame{i}-{stage}.png"
+                poster(s,i,len(scenes),frame,stage)
+                files.extend([f"file '{frame.name}'",f"duration {spoken/stages:.6f}"])
+            files.append(f"file '{frame.name}'")
+            frames=work/f"frames{i}.txt"
+            frames.write_text("\n".join(files)+"\n")
             video=work/f"{i}.mp4"
-            run(["ffmpeg","-loglevel","error","-y","-loop","1","-framerate","12","-i",str(png),"-i",str(audio),"-vf","format=yuv420p","-c:v","libx264","-preset","ultrafast","-tune","stillimage","-c:a","aac","-ar","44100","-ac","1","-shortest",str(video)])
-            duration=float(run(["ffprobe","-v","error","-show_entries","format=duration","-of","csv=p=0",str(video)]))
-            if duration < 1: raise ValueError("Speech synthesis returned empty audio.")
+            run(["ffmpeg","-loglevel","error","-y","-f","concat","-safe","0","-i",str(frames),
+                 "-i",str(audio),"-vf","fps=12,format=yuv420p","-c:v","libx264","-threads","2","-preset","veryfast",
+                 "-c:a","aac","-ar","44100","-ac","1","-t",f"{spoken:.3f}",str(video)])
+            for start,end,line in captions_for(s["narration"],spoken,alignment):
+                captions.extend([f"{timestamp(elapsed+start)} --> {timestamp(elapsed+end)}",line,""])
             s.update(start=elapsed,image=f"/media/{identifier}/{i}.png")
-            elapsed+=duration
+            elapsed+=duration_of(video)
         manifest=work/"parts.txt"
         manifest.write_text("".join(f"file '{i}.mp4'\n" for i in range(len(scenes))))
         run(["ffmpeg","-loglevel","error","-y","-f","concat","-safe","0","-i",str(manifest),"-c","copy","-movflags","+faststart",str(directory/"film.mp4")])
-    return dict(id=identifier,scenes=scenes,voice=voice,duration=elapsed,url=f"/media/{identifier}/film.mp4")
+    (directory/"captions.vtt").write_text("\n".join(captions))
+    return dict(id=identifier,scenes=scenes,voice=voice,duration=elapsed,url=f"/media/{identifier}/film.mp4",captions=f"/media/{identifier}/captions.vtt")

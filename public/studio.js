@@ -74,6 +74,12 @@ function show(item, time = 0, play = false) {
   };
   video.poster = film.scenes[0].image;
   video.src = film.url;
+  video.replaceChildren();
+  if (film.captions) {
+    const track = document.createElement("track");
+    Object.assign(track, {kind:"captions",label:"English",srclang:"en",src:film.captions});
+    video.append(track);
+  }
   video.load();
   sync();
 }
