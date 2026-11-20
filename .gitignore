@@ -1,0 +1,8 @@
+.env
+.build/
+__pycache__/
+.cache/
+public/media/*
+!public/media/demo/
+
+Paperframe-Replit.zip
