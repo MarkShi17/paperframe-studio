@@ -183,9 +183,39 @@ function sync() {
     ),
   );
 }
+async function voiceStatus() {
+  try {
+    const r = await fetch("/api/voice", { cache: "no-store" });
+    const { elevenlabs } = await r.json();
+    el("revoice").hidden =
+      !elevenlabs ||
+      !active ||
+      active.film.voice === "ElevenLabs" ||
+      Boolean(active.film.question);
+    el("voiceSetup").textContent = elevenlabs
+      ? "Narrated by ElevenLabs."
+      : "Using the device voice. ElevenLabs narration activates with ELEVENLABS_API_KEY.";
+  } catch {}
+}
+el("revoice").onclick = async () => {
+  if (busy || !active) return;
+  video.pause();
+  const chapter = Math.max(0, sceneIndex);
+  pending(true);
+  try {
+    const item = await generate({ revoice: active.film.id }, el("trackStatus"));
+    show(item, item.film.scenes[chapter].start);
+    el("trackStatus").textContent = "ElevenLabs narration is ready.";
+  } catch (e) {
+    el("trackStatus").textContent = e.message;
+  } finally {
+    pending(false);
+  }
+};
 function show(item, time = 0, play = false) {
   video.pause();
   active = item;
+  voiceStatus();
   saved.set(item.film.id, item);
   recent(item);
   const link = new URL(location.href);
@@ -279,6 +309,7 @@ video.ontimeupdate = sync;
 el("question").onfocus = () => video.pause();
 el("importBtn").onclick = () => {
   video.pause();
+  voiceStatus();
   drawRecent();
   el("dialog").showModal();
 };
@@ -322,7 +353,7 @@ async function generate(payload, status) {
 function pending(value) {
   busy = value;
   for (const node of document.querySelectorAll(
-    "#ask button,#paperForm button,#importBtn,#back,#overviewBtn,#deepBtn",
+    "#ask button,#paperForm button,#importBtn,#back,#overviewBtn,#deepBtn,#revoice",
   ))
     node.disabled = value;
 }

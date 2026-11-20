@@ -36,6 +36,23 @@ def story_from_id(identifier):
 
 def generate(job, data):
     try:
+        if data.get("revoice"):
+            if not setting("ELEVENLABS_API_KEY"):
+                raise ValueError(
+                    "Add ELEVENLABS_API_KEY to Replit Secrets or the local .env to enable sponsor narration."
+                )
+            original = story_from_id(data["revoice"])
+            previous = original["film"]
+            new_film = render(
+                job,
+                previous["scenes"],
+                lambda msg: update(job, label=msg),
+                120 if previous.get("mode") == "overview" else None,
+            )
+            item = {"paper": original["paper"], "film": {**previous, **new_film}}
+            (MEDIA / job / "story.json").write_text(json.dumps(item))
+            update(job, state="done", item=item)
+            return
         question = str(data.get("question", "")).strip()[:800]
         mode = data.get("mode", "overview")
         if mode not in ("deep", "overview"):
@@ -111,7 +128,9 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path != "/api/generate":
             return self.reply(404, {})
         origin = self.headers.get("Origin")
-        if origin and urlsplit(origin).netloc != self.headers.get("Host"):
+        hosts = {self.headers.get("Host"), os.getenv("REPLIT_DEV_DOMAIN")}
+        hosts.update(h.strip() for h in os.getenv("REPLIT_DOMAINS", "").split(","))
+        if origin and urlsplit(origin).netloc not in hosts:
             return self.reply(403, {})
         try:
             n = int(self.headers.get("Content-Length", 0))

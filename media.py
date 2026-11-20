@@ -39,9 +39,14 @@ def font(size, bold=False, serif=False):
     if FONT.exists():
         path = FONT / (face + (" Bold" if bold else "") + ".ttf")
     else:
-        family = "DejaVu Serif" if serif else "DejaVu Sans"
-        path = run(
-            ["fc-match", "-f", "%{file}", family + (":style=Bold" if bold else "")]
+        from matplotlib import get_data_path
+
+        family = "DejaVuSerif" if serif else "DejaVuSans"
+        path = (
+            Path(get_data_path())
+            / "fonts"
+            / "ttf"
+            / (family + ("-Bold" if bold else "") + ".ttf")
         )
     return ImageFont.truetype(str(path), size)
 

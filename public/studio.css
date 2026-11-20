@@ -498,3 +498,19 @@ label[for="depth"] {
   border-left: 3px solid #bab5dc;
   line-height: 1.5;
 }
+.voice-tools {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+#revoice {
+  font-size: 12px;
+  padding: 6px 9px;
+}
+#voiceSetup {
+  font-size: 13px;
+  color: #635d75;
+  line-height: 1.45;
+}

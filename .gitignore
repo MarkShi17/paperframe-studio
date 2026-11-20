@@ -9,3 +9,4 @@ Paperframe-Replit.zip
 
 .venv/
 !public/media/demo-deep/
+.replit-venv/

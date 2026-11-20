@@ -42,7 +42,12 @@
           ></video>
           <div class="videofoot">
             <strong id="filmTitle">Paper walkthrough</strong
-            ><span id="voice"></span>
+            ><span class="voice-tools"
+              ><span id="voice"></span
+              ><button type="button" id="revoice" hidden>
+                Use ElevenLabs voice
+              </button></span
+            >
           </div>
           <nav class="tabs" aria-label="Video details">
             <button id="chapterTab" aria-pressed="true">Chapters</button
@@ -102,6 +107,7 @@
           <option value="overview">2-minute overview</option>
           <option value="deep">Technical deep dive</option>
         </select>
+        <p id="voiceSetup"></p>
         <p id="importStatus" role="status"></p>
         <div id="recent"></div>
         <div class="actions">
