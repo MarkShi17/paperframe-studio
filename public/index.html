@@ -1,9 +1,104 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Paperframe · Research studio</title><link rel="stylesheet" href="/studio.css"><script defer src="/studio.js"></script></head>
-<body><header><div class="bar"><a href="/" class="brand"><b class="mark" aria-hidden="true">▸</b>Paperframe</a><span class="studio-name">Research studio</span><button id="importBtn" class="primary"><span aria-hidden="true">＋</span> Import paper</button></div></header>
-<main><div class="metadata"><span class="paper-tag">Research paper</span><a id="source" target="_blank" rel="noopener"></a></div><h1 id="title">Attention Is All You Need</h1><div class="byline" id="byline"></div>
-<div class="workspace"><section class="watch"><button hidden id="back">← Return to paused video</button><video id="video" controls playsinline preload="metadata" aria-label="Narrated paper explanation"></video>
-<div class="videofoot"><strong id="filmTitle">Paper walkthrough</strong><span id="voice"></span></div>
-<nav class="tabs" aria-label="Video details"><button id="chapterTab" aria-pressed="true">Chapters</button><button id="scriptTab" aria-pressed="false">Transcript</button></nav><div id="chapters"></div><div hidden id="transcript"></div></section>
-<aside><div class="panelhead"><span class="branch" aria-hidden="true">⑂</span><h2>Ask the paper</h2></div><div class="panelbody"><div class="anchor"><span class="time" id="stamp">0:00</span><span id="sceneTitle">How attention works</span></div><h3>Go deeper here.</h3><p>Ask about this moment to generate a short video explanation.</p><div id="ideas"></div><form id="ask"><label for="question">Your question</label><textarea id="question" required maxlength="800" placeholder="What does this diagram mean?"></textarea><button class="generate" type="submit">Generate answer video <span aria-hidden="true">↗</span></button></form><p role="status" class="status" id="status"></p><div hidden id="history"><h4>Your follow-ups</h4><div id="answers"></div></div></div></aside></div></main>
-<dialog id="dialog"><form id="paperForm"><h2>Import a paper</h2><label for="paper">arXiv URL or paper ID</label><input id="paper" placeholder="https://arxiv.org/abs/1706.03762" required maxlength="300"><p id="importStatus" role="status"></p><div class="actions"><button type="button" id="close">Cancel</button><button type="submit" class="primary">Generate video</button></div></form></dialog></body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Paperframe · Research studio</title>
+    <link rel="stylesheet" href="/studio.css" />
+    <script defer src="/studio.js"></script>
+  </head>
+  <body>
+    <header>
+      <div class="bar">
+        <a href="/" class="brand"
+          ><b class="mark" aria-hidden="true">▸</b>Paperframe</a
+        ><span class="studio-name">Research studio</span
+        ><button id="importBtn" class="primary">
+          <span aria-hidden="true">＋</span> Import paper
+        </button>
+      </div>
+    </header>
+    <main>
+      <div class="metadata">
+        <span class="paper-tag">Research paper</span
+        ><a id="source" target="_blank" rel="noopener"></a>
+      </div>
+      <h1 id="title">Attention Is All You Need</h1>
+      <div class="byline" id="byline"></div>
+      <div class="workspace">
+        <section class="watch">
+          <button hidden id="back">← Return to paused video</button
+          ><video
+            id="video"
+            controls
+            playsinline
+            preload="metadata"
+            aria-label="Narrated paper explanation"
+          ></video>
+          <div class="videofoot">
+            <strong id="filmTitle">Paper walkthrough</strong
+            ><span id="voice"></span>
+          </div>
+          <nav class="tabs" aria-label="Video details">
+            <button id="chapterTab" aria-pressed="true">Chapters</button
+            ><button id="scriptTab" aria-pressed="false">Transcript</button
+            ><button id="sourceTab" aria-pressed="false">Paper sources</button>
+          </nav>
+          <div id="chapters"></div>
+          <div hidden id="transcript"></div>
+          <div hidden id="sources"></div>
+        </section>
+        <aside>
+          <div class="panelhead">
+            <span class="branch" aria-hidden="true">⑂</span>
+            <h2>Ask the paper</h2>
+          </div>
+          <div class="panelbody">
+            <div class="anchor">
+              <span class="time" id="stamp">0:00</span
+              ><span id="sceneTitle">How attention works</span>
+            </div>
+            <blockquote id="quote"></blockquote>
+            <p>Ask about this moment to generate a short video explanation.</p>
+            <div id="ideas"></div>
+            <form id="ask">
+              <label for="question">Your question</label
+              ><textarea
+                id="question"
+                required
+                maxlength="800"
+                placeholder="What does this diagram mean?"
+              ></textarea
+              ><button class="generate" type="submit">
+                Generate answer video <span aria-hidden="true">↗</span>
+              </button>
+            </form>
+            <p role="status" class="status" id="status"></p>
+            <div hidden id="history">
+              <h4>Your follow-ups</h4>
+              <div id="answers"></div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+    <dialog id="dialog">
+      <form id="paperForm">
+        <h2>Import a paper</h2>
+        <label for="paper">arXiv URL or paper ID</label
+        ><input
+          id="paper"
+          placeholder="https://arxiv.org/abs/1706.03762"
+          required
+          maxlength="300"
+        />
+        <p id="importStatus" role="status"></p>
+        <div id="recent"></div>
+        <div class="actions">
+          <button type="button" id="close">Cancel</button
+          ><button type="submit" class="primary">Generate video</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>
