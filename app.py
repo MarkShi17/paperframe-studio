@@ -23,16 +23,28 @@ def update(job, **changes):
         jobs[job].update(changes)
 
 
+def story_from_id(identifier):
+    if not isinstance(identifier, str) or not re.fullmatch(
+        r"demo(?:-deep)?|[a-f0-9]{32}", identifier
+    ):
+        raise ValueError("Choose an existing video.")
+    path = MEDIA / identifier / "story.json"
+    if not path.is_file():
+        raise ValueError("This video has expired. Import the paper again.")
+    return json.loads(path.read_text())
+
+
 def generate(job, data):
     try:
         question = str(data.get("question", "")).strip()[:800]
+        mode = data.get("mode", "overview")
+        if mode not in ("deep", "overview"):
+            raise ValueError("Choose an overview or technical deep dive.")
         current = None
         moment = 0
         if question:
             parent = str(data.get("parent", ""))
-            if not re.fullmatch(r"demo|[a-f0-9]{32}", parent):
-                raise ValueError("Choose a video to ask about.")
-            source = json.loads((MEDIA / parent / "story.json").read_text())
+            source = story_from_id(parent)
             paper = source["paper"]
             film = source["film"]
             moment = float(data.get("time", 0))
@@ -40,17 +52,34 @@ def generate(job, data):
                 raise ValueError("Invalid timestamp.")
             moment = max(0, min(moment, film["duration"]))
             current = next(s for s in reversed(film["scenes"]) if s["start"] <= moment)
+        elif data.get("sourceFilm"):
+            paper = story_from_id(data["sourceFilm"])["paper"]
         else:
             update(job, label="Reading the paper from arXiv")
             paper = load_paper(str(data.get("paper", "")))
-        if not question and paper == DEMO and not setting("ELEVENLABS_API_KEY"):
-            item = json.loads((MEDIA / "demo/story.json").read_text())
+        if (
+            not question
+            and paper["id"] == DEMO["id"]
+            and not setting("ELEVENLABS_API_KEY")
+        ):
+            item = story_from_id("demo-deep" if mode == "deep" else "demo")
         else:
             update(job, label="Writing the illustrated explanation")
-            scenes, method = build_story(paper, question, current, moment)
+            scenes, method = build_story(paper, question, current, moment, mode)
+            if mode == "overview" and not question:
+                from studio import complete_overview
+
+                complete_overview(scenes, paper)
             assign_references(scenes, paper)
-            film = render(job, scenes, lambda message: update(job, label=message))
-            film.update(method=method, question=question)
+            film = render(
+                job,
+                scenes,
+                lambda message: update(job, label=message),
+                120 if mode == "overview" and not question else None,
+            )
+            film.update(
+                method=method, question=question, mode="answer" if question else mode
+            )
             if question:
                 film["parent"] = {
                     "id": parent,

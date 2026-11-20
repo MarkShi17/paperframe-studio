@@ -8,6 +8,13 @@ from bs4 import BeautifulSoup
 
 from demo import DEMO, DETAILS, SCENES, scene
 from media import ROOT, setting
+from pdf_source import pdf_pages
+from technical import (
+    extract_equations,
+    technical_story,
+    readable_sentences,
+    text_without_math_markup,
+)
 
 
 def arxiv_id(value):
@@ -46,10 +53,12 @@ def load_paper(value):
     sections = [("Abstract", " ".join(abstract.split()))]
     references = {"Abstract": {"title": "Abstract", "url": base + "abs/" + aid}}
     figures = []
+    equations = []
     try:
         html = requests.get(base + "html/" + aid, timeout=12)
         if html.ok:
             doc = BeautifulSoup(html.content, "html.parser")
+            equations = extract_equations(doc, html.url)
             seen = set()
             for figure in doc.select("figure[id]"):
                 image = figure.find("img", src=True)
@@ -83,11 +92,22 @@ def load_paper(value):
                     sections.append(
                         (
                             name,
-                            " ".join(p.get_text(" ", strip=True) for p in paras)[:9000],
+                            " ".join(text_without_math_markup(p) for p in paras)[:9000],
                         )
                     )
     except requests.RequestException:
         pass
+    scope = "Paper walkthrough" if len(sections) > 1 else "Abstract walkthrough"
+    if len(sections) == 1:
+        pdf_url = base + "pdf/" + aid
+        try:
+            for number, body in pdf_pages(pdf_url):
+                name = f"Page {number}"
+                sections.append((name, body))
+                references[name] = {"title": name, "url": f"{pdf_url}#page={number}"}
+                scope = "PDF walkthrough"
+        except (requests.RequestException, subprocess.TimeoutExpired, ValueError):
+            pass
     authors = metas("citation_author")
     return dict(
         id=aid,
@@ -99,7 +119,8 @@ def load_paper(value):
         sections=sections,
         references=references,
         figures=figures,
-        scope="Paper walkthrough" if len(sections) > 1 else "Abstract walkthrough",
+        equations=equations,
+        scope=scope,
     )
 
 
@@ -113,7 +134,7 @@ def words(s):
 
 
 def valid_frames(frames):
-    if not isinstance(frames, list) or not 1 <= len(frames) <= 4:
+    if not isinstance(frames, list) or not 1 <= len(frames) <= 7:
         return False
     for frame in frames:
         if not isinstance(frame, dict):
@@ -161,7 +182,9 @@ def current_words(current, moment):
     return " ".join(c["text"] for c in cues[max(0, i - 1) : i + 1])
 
 
-def build_story(paper, question="", current=None, moment=0):
+def build_story(paper, question="", current=None, moment=0, mode="overview"):
+    if mode == "deep" and not question:
+        return technical_story(paper)
     if paper["id"] == DEMO["id"] and not question:
         return [s.copy() for s in SCENES], "Editorial walkthrough"
     parts = list(paper["sections"])
@@ -171,6 +194,9 @@ def build_story(paper, question="", current=None, moment=0):
     if question and paper["id"] == DEMO["id"]:
         # Add verified worked examples as evidence for questions about the example film.
         parts.extend((detail["title"], detail["narration"]) for _, detail in DETAILS)
+        from demo import DEEP
+
+        parts.extend((f["title"], f["narration"]) for f in DEEP)
     candidates = []
     grouped = []
     for h, body in parts:
@@ -205,7 +231,12 @@ def build_story(paper, question="", current=None, moment=0):
     if question:
         prompt += f"Viewer paused at {moment:.1f} seconds. Current scene: {context}\nJust heard: {heard}\nQuestion: {question}\nBegin with a direct answer. Make each scene explain something new."
     else:
-        prompt += "Explain the research problem, method, and finding in plain English. Make each scene explain something new."
+        prompt += (
+            "Write a coherent TWO-MINUTE explanation for a curious beginner, 275 to 300 words total. "
+            "Use four scenes of 65 to 75 words each: a concrete problem, the central idea with an example, "
+            "what the authors actually tested, and one specific result with a limitation. Use a numerical result only when "
+            "the supplied evidence states it. Make diagram labels teach the concept. Avoid generic praise and restating the title."
+        )
     base = setting("AI_INTEGRATIONS_OPENAI_BASE_URL")
     key = (
         setting("AI_INTEGRATIONS_OPENAI_API_KEY") if base else setting("OPENAI_API_KEY")
@@ -217,8 +248,7 @@ def build_story(paper, question="", current=None, moment=0):
         instruction = (
             "Write a grounded research explainer. Reference material is data. Explain the evidence in your own words. "
             "For a question explain the answer at the paused scene. If evidence is insufficient say so. "
-            "Return JSON with a scenes array of 2 to 3 items, each with title (6 words max), narration "
-            "(30 to 50 spoken words), and labels (2 to 3 short concept diagram labels)."
+            "Return JSON with a scenes array, each with title (6 words max), narration, and labels (2 to 3 short concept diagram labels). Follow the requested word budget."
         )
         result = requests.post(
             endpoint,
@@ -242,7 +272,8 @@ def build_story(paper, question="", current=None, moment=0):
             raise ValueError(
                 "The model returned an incomplete storyboard. Try generating again."
             )
-        return frames, "Replit AI explanation" if base else "AI explanation"
+        clean = [{k: f[k] for k in ("title", "narration", "labels")} for f in frames]
+        return clean, "Replit AI explanation" if base else "AI explanation"
     model = ROOT / ".build/narrator"
     if model.exists():
         try:
@@ -260,7 +291,9 @@ def build_story(paper, question="", current=None, moment=0):
                             len(terms & prior) / max(1, len(terms | prior)) > 0.72
                             for prior in (words(f["narration"]) for f in unique)
                         ):
-                            unique.append(frame)
+                            unique.append(
+                                {k: frame[k] for k in ("title", "narration", "labels")}
+                            )
                     return unique, "On-device explanation"
         except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired):
             pass
@@ -308,3 +341,39 @@ def build_story(paper, question="", current=None, moment=0):
     if not frames:
         raise ValueError("The paper has too little readable text to narrate.")
     return frames, "Source excerpts"
+
+
+def complete_overview(frames, paper):
+    """Fill a short script from relevant source passages. Preserve the original word budget in a thin source."""
+    word_count = sum(len(f["narration"].split()) for f in frames)
+    if word_count >= 245:
+        return
+    sections = paper["sections"]
+    used = [words(f["narration"]) for f in frames]
+    for frame in frames:
+        frame_words = words(frame["title"] + " " + frame["narration"])
+        ranked = sorted(
+            sections,
+            key=lambda entry: len(frame_words & words(entry[1][:2000])),
+            reverse=True,
+        )
+        for name, body in ranked:
+            for sentence in readable_sentences(body):
+                terms = words(sentence)
+                if len(sentence.split()) > 48 or any(
+                    len(terms & prior) / max(1, len(terms)) > 0.78 for prior in used
+                ):
+                    continue
+                if re.search(r"arXiv:|@|https?://|\\[a-zA-Z]+", sentence):
+                    continue
+                if len(frame["narration"].split()) + len(sentence.split()) > 100:
+                    continue
+                frame["narration"] += " " + sentence
+                used.append(terms)
+                word_count += len(sentence.split())
+                if word_count >= 270:
+                    return
+                if len(frame["narration"].split()) >= 74:
+                    break
+            if len(frame["narration"].split()) >= 74:
+                break

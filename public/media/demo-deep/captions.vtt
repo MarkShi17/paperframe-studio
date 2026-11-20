@@ -1,0 +1,175 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:02.616
+Take an encoder sequence of n tokens.
+
+00:00:02.616 --> 00:00:05.980
+Put one token representation in each row of X.
+
+00:00:05.980 --> 00:00:09.717
+In the base model each row has five hundred and
+
+00:00:09.717 --> 00:00:13.454
+twelve coordinates. One head multiplies X by three different learned
+
+00:00:13.454 --> 00:00:14.949
+matrices to make queries,
+
+00:00:14.949 --> 00:00:18.687
+keys, and values. Its query and key vectors have sixty-four
+
+00:00:18.687 --> 00:00:21.303
+coordinates. These are learned changes of representation.
+
+00:00:21.303 --> 00:00:25.040
+They are not discrete labels saying what a token means.
+
+00:00:25.040 --> 00:00:27.557
+Multiply Q by the transpose of K.
+
+00:00:27.557 --> 00:00:30.435
+The result has n rows and n columns.
+
+00:00:30.435 --> 00:00:34.031
+Entry i j is the dot product of query i
+
+00:00:34.031 --> 00:00:37.627
+with key j. Divide each score by the square root
+
+00:00:37.627 --> 00:00:39.066
+of the key dimension.
+
+00:00:39.066 --> 00:00:40.864
+Here is the paper's motivation.
+
+00:00:40.864 --> 00:00:44.460
+If corresponding query and key coordinates are independent with zero
+
+00:00:44.460 --> 00:00:45.899
+mean and unit variance,
+
+00:00:45.899 --> 00:00:49.495
+the dot product has variance equal to the key dimension.
+
+00:00:49.495 --> 00:00:53.092
+Scaling keeps large scores from pushing softmax into regions with
+
+00:00:53.092 --> 00:00:54.171
+very small gradients.
+
+00:00:54.207 --> 00:00:57.995
+Take a toy row with two scores after scaling: zero
+
+00:00:57.995 --> 00:01:00.268
+and the natural log of three.
+
+00:01:00.268 --> 00:01:02.162
+Exponentiating gives one and three.
+
+00:01:02.162 --> 00:01:04.813
+Divide each by their sum of four.
+
+00:01:04.813 --> 00:01:08.223
+The attention weights are one quarter and three quarters.
+
+00:01:08.223 --> 00:01:10.874
+Suppose the first value vector is four,
+
+00:01:10.874 --> 00:01:13.147
+zero, and the second is zero,
+
+00:01:13.147 --> 00:01:15.420
+eight. The weighted sum is one,
+
+00:01:15.420 --> 00:01:17.693
+six. The second position contributes more,
+
+00:01:17.693 --> 00:01:19.587
+but the first still contributes.
+
+00:01:19.587 --> 00:01:22.617
+These are numbers chosen to illustrate Equation One.
+
+00:01:22.623 --> 00:01:26.527
+Softmax is applied separately to each row before multiplying the
+
+00:01:26.527 --> 00:01:28.089
+weight matrix by V.
+
+00:01:28.089 --> 00:01:31.993
+Repeat that operation with eight independent sets of projections in
+
+00:01:31.993 --> 00:01:35.897
+the base model. Each head produces sixty-four values per token.
+
+00:01:35.897 --> 00:01:39.411
+Concatenating eight outputs restores five hundred and twelve coordinates.
+
+00:01:39.411 --> 00:01:42.535
+A learned output projection mixes information across heads.
+
+00:01:42.535 --> 00:01:44.096
+The heads can specialize,
+
+00:01:44.096 --> 00:01:48.000
+but the architecture does not assign one head to grammar
+
+00:01:48.000 --> 00:01:49.562
+and another to meaning.
+
+00:01:49.562 --> 00:01:53.810
+During training the decoder sees a shifted sequence of target
+
+00:01:53.810 --> 00:01:57.632
+tokens. To predict the next token without looking ahead,
+
+00:01:57.632 --> 00:02:01.880
+it sets scores for forbidden future positions to negative infinity
+
+00:02:01.880 --> 00:02:04.428
+before softmax. Their exponentials become zero.
+
+00:02:04.428 --> 00:02:07.826
+The remaining weights normalize over the allowed prefix.
+
+00:02:07.826 --> 00:02:12.073
+This permits parallel computation of training losses at many positions.
+
+00:02:12.073 --> 00:02:16.321
+At inference the next input token still depends on the
+
+00:02:16.321 --> 00:02:18.869
+previous prediction, so generation proceeds sequentially.
+
+00:02:18.896 --> 00:02:22.739
+There is a cost to giving each word direct access
+
+00:02:22.739 --> 00:02:24.276
+to every other word.
+
+00:02:24.276 --> 00:02:27.351
+With sequence length n and representation dimension d,
+
+00:02:27.351 --> 00:02:31.194
+the paper's comparison gives order n squared d operations for
+
+00:02:31.194 --> 00:02:35.037
+self-attention versus order n d squared for a recurrent layer.
+
+00:02:35.037 --> 00:02:38.112
+These are layer-level comparisons under the paper's assumptions.
+
+00:02:38.112 --> 00:02:41.570
+They do not imply that attention always trains faster.
+
+00:02:41.570 --> 00:02:43.108
+Sequence length, model dimension,
+
+00:02:43.108 --> 00:02:44.645
+and hardware all matter.
+
+00:02:44.645 --> 00:02:48.488
+The shorter path between positions and the quadratic score matrix
+
+00:02:48.488 --> 00:02:51.178
+are two sides of the same design.

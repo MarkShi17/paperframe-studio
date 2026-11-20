@@ -5,25 +5,25 @@ def scene(title, narration, labels, art="flow"):
 SCENES = [
     scene(
         "How attention works",
-        "Read the sentence: the animal crossed the street because it was tired. To interpret it, you connect that word back to animal. Self-attention gives a model a way to learn connections like this. Each token gathers information from other tokens, with different weights for different relationships.",
+        "The animal crossed the street because it was tired. What does it refer to? You probably chose the animal. But change tired to wide, and the street becomes a better answer. The word it stayed the same. Its meaning changed with the words around it. This is the problem at the heart of the Transformer: how can a machine build a representation of a word that reflects its context?",
         ["animal", "crossed", "street", "it", "tired"],
         "attention",
     ),
     scene(
         "Queries, keys & values",
-        "Each token produces a query, a key, and a value. The query is compared with the keys to score possible connections. Softmax turns those scores into weights that add up to one. A weighted sum of the values gives the token its new representation.",
-        ["Compare queries & keys", "Normalize scores", "Mix values"],
+        "Imagine reading the sentence from the position of it. The model makes a query for that position and a key for every position in the sentence. Comparing the query with each key gives a score. A bigger score means a stronger connection. The model then blends information, called values, using those connections as weights. The highlighted line illustrates one possible connection. It is an example, not a measurement from the paper.",
+        ["Score connections", "Weight the words", "Blend information"],
     ),
     scene(
         "Many heads, one layer",
-        "A single set of weights gives one view of a sentence. The Transformer runs several attention heads in parallel, each with its own learned projections. It concatenates their outputs and mixes them with a learned matrix, so one token can incorporate several kinds of information.",
+        "One set of connections gives you one view of the sentence. A Transformer builds several views at once. Each attention head has different learned settings, so different heads can emphasize different relationships. The model combines their outputs into a new representation for each word. It also adds information about position. Otherwise, attention would have no way to tell whether animal came before street or after it.",
         ["Parallel heads", "Concatenate", "Project"],
         "heads",
     ),
     scene(
         "What changed",
-        "Earlier recurrent translation models processed a sentence one position at a time. The Transformer encoder computes representations for all positions in a layer together. In the paper's English-to-German translation experiment, the model reached 28.4 BLEU. The decoder still generates translated words one at a time.",
-        ["Parallel encoding", "Translation", "28.4 BLEU"],
+        "Why did this matter for translation? A recurrent encoder passes information from one position to the next. Attention lets distant words interact within a single layer, and an encoder can update all positions together. In the paper's English-to-German experiment, the Transformer reached 28.4 BLEU, a translation quality score. There are trade-offs. Standard attention compares every pair of positions, and the decoder still generates the translation one word at a time. The advance was changing how context is computed.",
+        ["Parallel encoding", "Translation test", "28.4 BLEU"],
     ),
 ]
 DETAILS = [
@@ -107,3 +107,66 @@ DETAILS.extend(
         ),
     ]
 )
+
+
+def math_scene(title, narration, formula, steps, reference, anchor):
+    return {
+        **scene(title, narration, steps, "math"),
+        "formula": formula,
+        "reference": {
+            "title": reference,
+            "url": "https://arxiv.org/html/1706.03762#" + anchor,
+        },
+    }
+
+
+DEEP = [
+    math_scene(
+        "Start with the shapes",
+        "Take an encoder sequence of n tokens. Put one token representation in each row of X. In the base model each row has five hundred and twelve coordinates. One head multiplies X by three different learned matrices to make queries, keys, and values. Its query and key vectors have sixty-four coordinates. These are learned changes of representation. They are not discrete labels saying what a token means.",
+        "Q = XWQ      K = XWK      V = XWV",
+        ["X: n × 512", "Q and K: n × 64", "V: n × 64"],
+        "3.2.2 Multi-Head Attention",
+        "S3.SS2.SSS2",
+    ),
+    math_scene(
+        "Score every pair",
+        "Multiply Q by the transpose of K. The result has n rows and n columns. Entry i j is the dot product of query i with key j. Divide each score by the square root of the key dimension. Here is the paper's motivation. If corresponding query and key coordinates are independent with zero mean and unit variance, the dot product has variance equal to the key dimension. Scaling keeps large scores from pushing softmax into regions with very small gradients.",
+        "S = QKᵀ / √dₖ",
+        ["One row per query", "One column per key", "64 dimensions → divide by 8"],
+        "3.2.1 Scaled Dot-Product Attention",
+        "S3.SS2.SSS1",
+    ),
+    math_scene(
+        "Work one row by hand",
+        "Take a toy row with two scores after scaling: zero and the natural log of three. Exponentiating gives one and three. Divide each by their sum of four. The attention weights are one quarter and three quarters. Suppose the first value vector is four, zero, and the second is zero, eight. The weighted sum is one, six. The second position contributes more, but the first still contributes. These are numbers chosen to illustrate Equation One.",
+        "¼ (4, 0) + ¾ (0, 8) = (1, 6)",
+        ["Scores: 0 and ln 3", "Weights: ¼ and ¾", "Output: (1, 6)"],
+        "3.2.1 Scaled Dot-Product Attention, Eq. 1",
+        "S3.SS2.SSS1",
+    ),
+    math_scene(
+        "Combine the heads",
+        "Softmax is applied separately to each row before multiplying the weight matrix by V. Repeat that operation with eight independent sets of projections in the base model. Each head produces sixty-four values per token. Concatenating eight outputs restores five hundred and twelve coordinates. A learned output projection mixes information across heads. The heads can specialize, but the architecture does not assign one head to grammar and another to meaning.",
+        "MultiHead = Concat(head₁, …, head₈) Wᴼ",
+        ["8 projections", "8 × 64 = 512", "Learned output mix"],
+        "3.2.2 Multi-Head Attention",
+        "S3.SS2.SSS2",
+    ),
+    math_scene(
+        "Mask the decoder",
+        "During training the decoder sees a shifted sequence of target tokens. To predict the next token without looking ahead, it sets scores for forbidden future positions to negative infinity before softmax. Their exponentials become zero. The remaining weights normalize over the allowed prefix. This permits parallel computation of training losses at many positions. At inference the next input token still depends on the previous prediction, so generation proceeds sequentially.",
+        "j > i   ⇒   Sᵢⱼ = −∞   ⇒   Aᵢⱼ = 0",
+        ["Shift targets", "Mask future scores", "Normalize allowed prefix"],
+        "3.2.3 Applications of Attention in our Model",
+        "S3.SS2.SSS3",
+    ),
+    math_scene(
+        "Read the scaling claim",
+        "There is a cost to giving each word direct access to every other word. With sequence length n and representation dimension d, the paper's comparison gives order n squared d operations for self-attention versus order n d squared for a recurrent layer. These are layer-level comparisons under the paper's assumptions. They do not imply that attention always trains faster. Sequence length, model dimension, and hardware all matter. The shorter path between positions and the quadratic score matrix are two sides of the same design.",
+        "Self-attention: O(n²d)     Recurrent: O(nd²)",
+        ["n = sequence length", "d = feature dimension", "Compare at the same n and d"],
+        "4 Why Self-Attention, Table 1",
+        "S4",
+    ),
+]

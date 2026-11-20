@@ -25,6 +25,11 @@
       </div>
       <h1 id="title">Attention Is All You Need</h1>
       <div class="byline" id="byline"></div>
+      <div class="tracks" role="group" aria-label="Explanation depth">
+        <button id="overviewBtn" aria-pressed="true">2-minute overview</button>
+        <button id="deepBtn" aria-pressed="false">Technical deep dive</button>
+      </div>
+      <div id="trackStatus" role="status"></div>
       <div class="workspace">
         <section class="watch">
           <button hidden id="back">← Return to paused video</button
@@ -92,6 +97,11 @@
           required
           maxlength="300"
         />
+        <label for="depth">Explanation depth</label>
+        <select id="depth">
+          <option value="overview">2-minute overview</option>
+          <option value="deep">Technical deep dive</option>
+        </select>
         <p id="importStatus" role="status"></p>
         <div id="recent"></div>
         <div class="actions">

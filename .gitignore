@@ -6,3 +6,6 @@ public/media/*
 !public/media/demo/
 
 Paperframe-Replit.zip
+
+.venv/
+!public/media/demo-deep/

@@ -444,3 +444,57 @@ button[hidden],
 #recent:empty {
   display: none;
 }
+.tracks {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  gap: 3px;
+  border: 1px solid #d9d8e5;
+  border-radius: 9px;
+  background: #f1f0f7;
+  margin-top: 22px;
+}
+.tracks button {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 8px 13px;
+  color: #625e73;
+  font-size: 14px;
+}
+.tracks button[aria-pressed="true"] {
+  background: white;
+  color: #423776;
+  font-weight: 600;
+  box-shadow: 0 1px 4px #24243a24;
+}
+.tracks ~ .workspace {
+  margin-top: 16px;
+}
+#trackStatus:not(:empty) {
+  margin-top: 12px;
+  color: #5b5574;
+}
+select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #cfcddf;
+  border-radius: 6px;
+  background: white;
+  font: inherit;
+}
+label[for="depth"] {
+  margin-top: 14px;
+}
+#sources pre {
+  overflow-x: auto;
+  padding: 13px;
+  background: #eeedf8;
+  font-size: 14px;
+}
+#sources blockquote {
+  margin: 14px 0;
+  padding-left: 12px;
+  border-left: 3px solid #bab5dc;
+  line-height: 1.5;
+}

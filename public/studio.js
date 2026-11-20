@@ -10,7 +10,7 @@ let active,
   sceneIndex = -1,
   busy = false;
 const saved = new Map();
-const idPattern = /^(demo|[a-f0-9]{32})$/;
+const idPattern = /^(demo(?:-deep)?|[a-f0-9]{32})$/;
 function readStored(name, fallback) {
   try {
     return JSON.parse(localStorage.getItem("paperframe-" + name)) ?? fallback;
@@ -85,6 +85,16 @@ function drawSources(scene) {
     heading,
     sourceLink(scene.reference || { title: paper.title, url: paper.source }),
   );
+  if (scene.evidence) {
+    const excerpt = document.createElement("blockquote");
+    excerpt.textContent = scene.evidence;
+    panel.append(excerpt);
+  }
+  if (scene.tex || scene.formula) {
+    const expression = document.createElement("pre");
+    expression.textContent = scene.tex || scene.formula;
+    panel.append(expression);
+  }
   for (const f of paper.figures || []) {
     const details = document.createElement("details");
     const title = document.createElement("summary");
@@ -127,9 +137,15 @@ function sync() {
   );
   const scene = scenes[index];
   const cue = (scene.cues || []).find((c) => c.start <= t && t < c.end);
-  const sentences = scene.narration.match(/[^.!?]+(?:[.!?]+(?=\s|$)|$)/g) || [scene.narration];
-  const phrase = cue?.text.split(" ").slice(0,3).join(" ");
-  const excerpt = (phrase && sentences.find(sentence => sentence.includes(phrase)) || cue?.text || sentences[0]).trim();
+  const sentences = scene.narration.match(/[^.!?]+(?:[.!?]+(?=\s|$)|$)/g) || [
+    scene.narration,
+  ];
+  const phrase = cue?.text.split(" ").slice(0, 3).join(" ");
+  const excerpt = (
+    (phrase && sentences.find((sentence) => sentence.includes(phrase))) ||
+    cue?.text ||
+    sentences[0]
+  ).trim();
   if (el("quote").textContent !== excerpt) el("quote").textContent = excerpt;
   if (sceneIndex === index) return;
   drawSources(scene);
@@ -179,7 +195,21 @@ function show(item, time = 0, play = false) {
   el("byline").textContent = [paper.authors, paper.date]
     .filter(Boolean)
     .join("   ·   ");
-  el("filmTitle").textContent = film.question || paper.scope;
+  const mode = film.mode || "overview";
+  const isAnswer = Boolean(film.question);
+  el("overviewBtn").setAttribute(
+    "aria-pressed",
+    !isAnswer && mode === "overview",
+  );
+  el("deepBtn").setAttribute("aria-pressed", !isAnswer && mode === "deep");
+  if (!isAnswer) writeStored("track-" + paper.id + "-" + mode, film.id);
+  el("filmTitle").textContent =
+    film.question ||
+    (mode === "deep" ? "Technical deep dive" : "High-level overview");
+  el("trackStatus").textContent =
+    paper.scope === "Abstract walkthrough"
+      ? "Based on the abstract. Full text was unavailable."
+      : "";
   el("voice").textContent =
     fmt(film.duration) + " · " + film.voice + " narration";
   el("back").hidden = !stack.length;
@@ -287,7 +317,7 @@ async function generate(payload, status) {
 function pending(value) {
   busy = value;
   for (const node of document.querySelectorAll(
-    "#ask button,#paperForm button,#importBtn,#back",
+    "#ask button,#paperForm button,#importBtn,#back,#overviewBtn,#deepBtn",
   ))
     node.disabled = value;
 }
@@ -324,6 +354,39 @@ el("ask").onsubmit = async (e) => {
     pending(false);
   }
 };
+async function switchTrack(mode) {
+  if (
+    busy ||
+    !active ||
+    (!active.film.question && (active.film.mode || "overview") === mode)
+  )
+    return;
+  video.pause();
+  const id = readStored("track-" + active.paper.id + "-" + mode, null);
+  pending(true);
+  try {
+    let item;
+    if (id) {
+      try {
+        item = await fetchFilm(id);
+      } catch {}
+    }
+    if (!item)
+      item = await generate(
+        { paper: active.paper.id, sourceFilm: active.film.id, mode },
+        el("trackStatus"),
+      );
+    await openFilm(item.film.id);
+    el("status").textContent = "";
+    tab("chapters");
+  } catch (e) {
+    el("trackStatus").textContent = e.message;
+  } finally {
+    pending(false);
+  }
+}
+el("deepBtn").onclick = () => switchTrack("deep");
+el("overviewBtn").onclick = () => switchTrack("overview");
 el("paperForm").onsubmit = async (e) => {
   e.preventDefault();
   if (busy) return;
@@ -331,7 +394,7 @@ el("paperForm").onsubmit = async (e) => {
   el("importStatus").textContent = "Reading paper…";
   try {
     const item = await generate(
-      { paper: el("paper").value },
+      { paper: el("paper").value, mode: el("depth").value },
       el("importStatus"),
     );
     stack = [];

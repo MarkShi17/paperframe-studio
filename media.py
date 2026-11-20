@@ -1,3 +1,5 @@
+from io import BytesIO
+from threading import Lock
 import base64
 import math
 import re
@@ -53,6 +55,38 @@ def lines(draw, text, face, width):
     return rows
 
 
+math_lock = Lock()
+
+
+@lru_cache(maxsize=24)
+def equation_picture(tex):
+    # MathText uses a local parser. External TeX execution stays disabled.
+    from matplotlib.font_manager import FontProperties
+    from matplotlib.mathtext import math_to_image
+
+    clean = tex.replace(r"\displaystyle", "").strip().rstrip(",")
+    if len(clean) > 700 or "$" in clean:
+        return None
+    try:
+        with math_lock:
+            output = BytesIO()
+            math_to_image(
+                "$" + clean + "$",
+                output,
+                prop=FontProperties(size=20),
+                dpi=175,
+                format="png",
+                color="#27264c",
+            )
+        output.seek(0)
+        with Image.open(output) as source:
+            result = source.convert("RGBA")
+        result.thumbnail((1088, 248), Image.Resampling.LANCZOS)
+        return result
+    except (ValueError, RuntimeError, IndexError):
+        return None
+
+
 def poster(scene, index, count, path, stage=None):
     im = Image.new("RGB", (1280, 720), INK)
     d = ImageDraw.Draw(im)
@@ -72,7 +106,44 @@ def poster(scene, index, count, path, stage=None):
     for n, row in enumerate(lines(d, scene["title"], titlefont, 1150)[:2]):
         d.text((64, 112 + n * 68), row, font=titlefont, fill="#fffcfa")
     labels = scene["labels"]
-    if scene.get("art") == "attention":
+    picture = equation_picture(scene["tex"]) if scene.get("tex") else None
+    if picture is not None:
+        d.rounded_rectangle((64, 237, 1216, 525), radius=15, fill="white")
+        im.paste(
+            picture, ((1280 - picture.width) // 2, 380 - picture.height // 2), picture
+        )
+        d.text((65, 557), scene["reference"]["title"][:85], font=font(24), fill=LAV)
+    elif scene.get("art") == "math":
+        expression = scene["formula"]
+        size = 54
+        mathfont = font(size)
+        while size > 19 and d.textlength(expression, font=mathfont) > 1120:
+            size -= 2
+            mathfont = font(size)
+        d.rounded_rectangle(
+            (64, 244, 1216, 415), radius=16, fill="#2b2c54", outline="#747299", width=2
+        )
+        rows = lines(d, expression, mathfont, 1100)
+        for row_no, row in enumerate(rows[:3]):
+            d.text(
+                (640, 330 + (row_no - (min(len(rows), 3) - 1) / 2) * (size + 4)),
+                row,
+                font=mathfont,
+                fill=GOLD,
+                anchor="mm",
+            )
+        for j, label in enumerate(labels):
+            x = 76 + j * (1128 / len(labels))
+            active = stage is None or stage == j
+            d.line((x, 458, x + 102, 458), fill=GOLD if active else "#5d5d82", width=4)
+            for n, row in enumerate(lines(d, label, font(25), 1030 / len(labels))[:3]):
+                d.text(
+                    (x, 478 + n * 32),
+                    row,
+                    font=font(25),
+                    fill="white" if active else "#a3a3bf",
+                )
+    elif scene.get("art") == "attention":
         xs = [152, 395, 635, 875, 1122]
         for i, x in enumerate(xs):
             if i == 3 or (
@@ -246,7 +317,7 @@ def voice_audio(work, i, text, key, voice):
     return audio, None
 
 
-def render(identifier, scenes, progress):
+def render(identifier, scenes, progress, target_seconds=None):
     directory = MEDIA / identifier
     directory.mkdir(parents=True, exist_ok=True)
     key = setting("ELEVENLABS_API_KEY")
@@ -255,12 +326,23 @@ def render(identifier, scenes, progress):
     captions = ["WEBVTT", ""]
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
+        tracks = []
         for i, s in enumerate(scenes):
             progress(f"Voicing scene {i + 1} of {len(scenes)} · {voice}")
             audio, alignment = voice_audio(work, i, s["narration"], key, voice)
             spoken = duration_of(audio)
             if spoken < 0.5:
                 raise ValueError("Speech synthesis returned empty audio.")
+            tracks.append((audio, alignment, spoken))
+        raw_duration = sum(track[2] for track in tracks)
+        # Short excerpts retain natural speech when the source cannot support two minutes.
+        tempo = raw_duration / target_seconds if target_seconds else 1.0
+        if not 0.76 <= tempo <= 1.32:
+            tempo = 1.0
+        for i, (s, (audio, alignment, original_duration)) in enumerate(
+            zip(scenes, tracks)
+        ):
+            spoken = original_duration / tempo
             progress(f"Animating diagram {i + 1} of {len(scenes)}")
             poster(s, i, len(scenes), directory / f"{i}.png")
             files = []
@@ -301,6 +383,8 @@ def render(identifier, scenes, progress):
                     "2",
                     "-preset",
                     "veryfast",
+                    "-af",
+                    f"atempo={tempo:.8f},apad",
                     "-c:a",
                     "aac",
                     "-ar",
@@ -313,7 +397,10 @@ def render(identifier, scenes, progress):
                 ]
             )
             s["cues"] = []
-            for start, end, line in captions_for(s["narration"], spoken, alignment):
+            for start, end, line in captions_for(
+                s["narration"], original_duration, alignment
+            ):
+                start, end = start / tempo, end / tempo
                 s["cues"].append(
                     dict(start=elapsed + start, end=elapsed + end, text=line)
                 )
@@ -352,7 +439,7 @@ def render(identifier, scenes, progress):
         id=identifier,
         scenes=scenes,
         voice=voice,
-        duration=elapsed,
+        duration=duration_of(directory / "film.mp4"),
         url=f"/media/{identifier}/film.mp4",
         captions=f"/media/{identifier}/captions.vtt",
     )

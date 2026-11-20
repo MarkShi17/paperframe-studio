@@ -1,70 +1,115 @@
 WEBVTT
 
-00:00:00.000 --> 00:00:03.591
-Read the sentence: the animal crossed the street because it
+00:00:00.000 --> 00:00:03.365
+The animal crossed the street because it was tired.
 
-00:00:03.591 --> 00:00:05.386
-was tired. To interpret it,
+00:00:03.365 --> 00:00:05.234
+What does it refer to?
 
-00:00:05.386 --> 00:00:07.900
-you connect that word back to animal.
+00:00:05.234 --> 00:00:07.104
+You probably chose the animal.
 
-00:00:07.900 --> 00:00:11.490
-Self-attention gives a model a way to learn connections like
+00:00:07.104 --> 00:00:08.973
+But change tired to wide,
 
-00:00:11.490 --> 00:00:14.363
-this. Each token gathers information from other tokens,
+00:00:08.973 --> 00:00:11.590
+and the street becomes a better answer.
 
-00:00:14.363 --> 00:00:16.517
-with different weights for different relationships.
+00:00:11.590 --> 00:00:13.834
+The word it stayed the same.
 
-00:00:16.517 --> 00:00:18.238
-Each token produces a query,
+00:00:13.834 --> 00:00:16.825
+Its meaning changed with the words around it.
 
-00:00:18.238 --> 00:00:19.959
-a key, and a value.
+00:00:16.825 --> 00:00:20.563
+This is the problem at the heart of the Transformer:
 
-00:00:19.959 --> 00:00:23.402
-The query is compared with the keys to score possible
+00:00:20.563 --> 00:00:24.302
+how can a machine build a representation of a word
 
-00:00:23.402 --> 00:00:26.844
-connections. Softmax turns those scores into weights that add up
+00:00:24.302 --> 00:00:25.798
+that reflects its context?
 
-00:00:26.844 --> 00:00:30.287
-to one. A weighted sum of the values gives the
+00:00:25.833 --> 00:00:29.476
+Imagine reading the sentence from the position of it.
 
-00:00:30.287 --> 00:00:31.664
-token its new representation.
+00:00:29.476 --> 00:00:33.523
+The model makes a query for that position and a
 
-00:00:31.684 --> 00:00:35.205
-A single set of weights gives one view of a
+00:00:33.523 --> 00:00:36.356
+key for every position in the sentence.
 
-00:00:35.205 --> 00:00:38.374
-sentence. The Transformer runs several attention heads in parallel,
+00:00:36.356 --> 00:00:39.999
+Comparing the query with each key gives a score.
 
-00:00:38.374 --> 00:00:40.487
-each with its own learned projections.
+00:00:39.999 --> 00:00:42.832
+A bigger score means a stronger connection.
 
-00:00:40.487 --> 00:00:44.008
-It concatenates their outputs and mixes them with a learned
+00:00:42.832 --> 00:00:44.856
+The model then blends information,
 
-00:00:44.008 --> 00:00:47.529
-matrix, so one token can incorporate several kinds of information.
+00:00:44.856 --> 00:00:47.689
+called values, using those connections as weights.
 
-00:00:47.529 --> 00:00:51.890
-Earlier recurrent translation models processed a sentence one position at
+00:00:47.689 --> 00:00:50.522
+The highlighted line illustrates one possible connection.
 
-00:00:51.890 --> 00:00:56.252
-a time. The Transformer encoder computes representations for all positions
+00:00:50.522 --> 00:00:52.141
+It is an example,
 
-00:00:56.252 --> 00:00:57.996
-in a layer together.
+00:00:52.141 --> 00:00:54.569
+not a measurement from the paper.
 
-00:00:57.996 --> 00:01:00.613
-In the paper's English-to-German translation experiment,
+00:00:54.583 --> 00:00:58.926
+One set of connections gives you one view of the
 
-00:01:00.613 --> 00:01:02.794
-the model reached 28.4 BLEU.
+00:00:58.926 --> 00:01:02.401
+sentence. A Transformer builds several views at once.
 
-00:01:02.794 --> 00:01:07.155
-The decoder still generates translated words one at a time.
+00:01:02.401 --> 00:01:05.441
+Each attention head has different learned settings,
+
+00:01:05.441 --> 00:01:08.481
+so different heads can emphasize different relationships.
+
+00:01:08.481 --> 00:01:12.824
+The model combines their outputs into a new representation for
+
+00:01:12.824 --> 00:01:16.298
+each word. It also adds information about position.
+
+00:01:16.298 --> 00:01:20.641
+Otherwise, attention would have no way to tell whether animal
+
+00:01:20.641 --> 00:01:23.247
+came before street or after it.
+
+00:01:23.250 --> 00:01:26.081
+Why did this matter for translation?
+
+00:01:26.081 --> 00:01:30.799
+A recurrent encoder passes information from one position to the
+
+00:01:30.799 --> 00:01:35.518
+next. Attention lets distant words interact within a single layer,
+
+00:01:35.518 --> 00:01:39.292
+and an encoder can update all positions together.
+
+00:01:39.292 --> 00:01:41.652
+In the paper's English-to-German experiment,
+
+00:01:41.652 --> 00:01:44.011
+the Transformer reached 28.4 BLEU,
+
+00:01:44.011 --> 00:01:45.898
+a translation quality score.
+
+00:01:45.898 --> 00:01:50.616
+There are trade-offs. Standard attention compares every pair of positions,
+
+00:01:50.616 --> 00:01:55.335
+and the decoder still generates the translation one word at
+
+00:01:55.335 --> 00:02:00.053
+a time. The advance was changing how context is computed.
