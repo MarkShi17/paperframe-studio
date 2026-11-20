@@ -90,6 +90,11 @@ function drawSources(scene) {
     excerpt.textContent = scene.evidence;
     panel.append(excerpt);
   }
+  for (const ref of (scene.citations || []).slice(1)) {
+    const text = document.createElement("blockquote");
+    text.textContent = ref.excerpt;
+    panel.append(sourceLink(ref), text);
+  }
   if (scene.tex || scene.formula) {
     const expression = document.createElement("pre");
     expression.textContent = scene.tex || scene.formula;

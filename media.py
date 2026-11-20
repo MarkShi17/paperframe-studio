@@ -1,5 +1,6 @@
 from io import BytesIO
 from threading import Lock
+from urllib.parse import urlsplit
 import base64
 import math
 import re
@@ -12,6 +13,7 @@ from pathlib import Path
 
 import requests
 from PIL import Image, ImageDraw, ImageFont
+from figures import attention_mix, referent, translation
 
 ROOT = Path(__file__).resolve().parent
 MEDIA = ROOT / "public/media"
@@ -87,7 +89,38 @@ def equation_picture(tex):
         return None
 
 
-def poster(scene, index, count, path, stage=None):
+@lru_cache(maxsize=10)
+def original_figure(url):
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or parsed.hostname != "arxiv.org":
+        return None
+    try:
+        with requests.get(
+            url, stream=True, timeout=(3, 8), allow_redirects=False
+        ) as response:
+            if response.status_code != 200:
+                return None
+            data = BytesIO()
+            for chunk in response.iter_content(65536):
+                if data.tell() + len(chunk) > 8 * 1024 * 1024:
+                    return None
+                data.write(chunk)
+        data.seek(0)
+        with Image.open(data) as source:
+            if source.width * source.height > 15000000:
+                return None
+            source.thumbnail((1100, 355), Image.Resampling.LANCZOS)
+            return source.convert("RGBA")
+    except (
+        requests.RequestException,
+        OSError,
+        ValueError,
+        Image.DecompressionBombError,
+    ):
+        return None
+
+
+def poster(scene, index, count, path, stage=None, progression=1.0):
     im = Image.new("RGB", (1280, 720), INK)
     d = ImageDraw.Draw(im)
     for x in range(0, 1280, 32):
@@ -107,7 +140,23 @@ def poster(scene, index, count, path, stage=None):
         d.text((64, 112 + n * 68), row, font=titlefont, fill="#fffcfa")
     labels = scene["labels"]
     picture = equation_picture(scene["tex"]) if scene.get("tex") else None
-    if picture is not None:
+    diagram = {
+        "referent": referent,
+        "mix": attention_mix,
+        "translation": translation,
+    }.get(scene.get("art"))
+    source_figure = scene.get("source_figure", {})
+    original = original_figure(source_figure["image"]) if source_figure else None
+    if original is not None:
+        d.rounded_rectangle((64, 245, 1216, 610), radius=13, fill="white")
+        im.paste(
+            original,
+            ((1280 - original.width) // 2, 427 - original.height // 2),
+            original,
+        )
+    elif diagram:
+        diagram(d, font, stage, progression)
+    elif picture is not None and scene.get("art") != "math":
         d.rounded_rectangle((64, 237, 1216, 525), radius=15, fill="white")
         im.paste(
             picture, ((1280 - picture.width) // 2, 380 - picture.height // 2), picture
@@ -123,15 +172,15 @@ def poster(scene, index, count, path, stage=None):
         d.rounded_rectangle(
             (64, 244, 1216, 415), radius=16, fill="#2b2c54", outline="#747299", width=2
         )
-        rows = lines(d, expression, mathfont, 1100)
-        for row_no, row in enumerate(rows[:3]):
-            d.text(
-                (640, 330 + (row_no - (min(len(rows), 3) - 1) / 2) * (size + 4)),
-                row,
-                font=mathfont,
-                fill=GOLD,
-                anchor="mm",
+        if picture is not None:
+            # Recolor the dark equation pixels gold on the film's dark panel.
+            alpha = picture.convert("L").point(lambda value: max(0, 255 - value))
+            stamp = Image.new("RGBA", picture.size, GOLD)
+            im.paste(
+                stamp, ((1280 - picture.width) // 2, 330 - picture.height // 2), alpha
             )
+        else:
+            d.text((640, 330), expression, font=mathfont, fill=GOLD, anchor="mm")
         for j, label in enumerate(labels):
             x = 76 + j * (1128 / len(labels))
             active = stage is None or stage == j
@@ -223,7 +272,12 @@ def poster(scene, index, count, path, stage=None):
                     fill=LAV,
                 )
     d.line((64, 634, 1216, 634), fill="#515477", width=2)
-    d.text((64, 657), "Paperframe Studio", font=font(21, serif=True), fill="#dfddfe")
+    d.text(
+        (64, 657),
+        source_figure["credit"] if original is not None else "Paperframe Studio",
+        font=font(21, serif=True),
+        fill="#dfddfe",
+    )
     d.text(
         (1216, 658),
         f"FIG. {index + 1:02}   /   {count:02}",
@@ -351,12 +405,39 @@ def render(identifier, scenes, progress, target_seconds=None):
                 if s.get("art") in ("attention", "heads")
                 else min(3, len(s["labels"]))
             )
-            for stage in range(stages):
-                frame = work / f"frame{i}-{stage}.png"
-                poster(s, i, len(scenes), frame, stage)
-                files.extend(
-                    [f"file '{frame.name}'", f"duration {spoken / stages:.6f}"]
-                )
+            boundaries = [spoken * k / stages for k in range(stages)] + [spoken]
+            beats = s.get("beats", [])
+            if beats:
+                boundaries = [0.0]
+                for phrase in beats:
+                    offset = s["narration"].find(phrase)
+                    if offset <= 0:
+                        continue
+                    ends = (alignment or {}).get("character_end_times_seconds", [])
+                    if len(ends) == len(s["narration"]):
+                        t = ends[offset - 1] / tempo
+                    else:
+                        t = (
+                            spoken
+                            * len(s["narration"][:offset].split())
+                            / len(s["narration"].split())
+                        )
+                    if boundaries[-1] < t < spoken:
+                        boundaries.append(t)
+                boundaries.append(spoken)
+            for stage, (begin, end) in enumerate(zip(boundaries, boundaries[1:])):
+                animated = s.get("art") in ("referent", "mix") and stage > 0
+                steps = 6 if animated else 1
+                transition = min(0.7, (end - begin) * 0.4)
+                for tick in range(steps):
+                    frame = work / f"frame{i}-{stage}-{tick}.png"
+                    poster(s, i, len(scenes), frame, stage, (tick + 1) / steps)
+                    hold = (
+                        transition / steps
+                        if tick < steps - 1
+                        else end - begin - (steps - 1) * transition / steps
+                    )
+                    files.extend([f"file '{frame.name}'", f"duration {hold:.6f}"])
             files.append(f"file '{frame.name}'")
             frames = work / f"frames{i}.txt"
             frames.write_text("\n".join(files) + "\n")

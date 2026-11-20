@@ -7,7 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from demo import DEMO, DETAILS, SCENES, scene
-from media import ROOT, setting
+from scriptwriter import draft, grounded_frames
 from pdf_source import pdf_pages
 from technical import (
     extract_equations,
@@ -133,26 +133,6 @@ def words(s):
     return set(re.findall(r"[a-z0-9]{2,}", s.lower())) - STOP
 
 
-def valid_frames(frames):
-    if not isinstance(frames, list) or not 1 <= len(frames) <= 7:
-        return False
-    for frame in frames:
-        if not isinstance(frame, dict):
-            return False
-        title, narration, labels = (
-            frame.get(k) for k in ("title", "narration", "labels")
-        )
-        if not isinstance(title, str) or not 1 <= len(title) <= 110:
-            return False
-        if not isinstance(narration, str) or not 20 <= len(narration) <= 1400:
-            return False
-        if not isinstance(labels, list) or not 2 <= len(labels) <= 3:
-            return False
-        if not all(isinstance(label, str) and 0 < len(label) <= 80 for label in labels):
-            return False
-    return True
-
-
 def assign_references(frames, paper):
     references = paper.get("references", {})
     for f in frames:
@@ -226,77 +206,77 @@ def build_story(paper, question="", current=None, moment=0, mode="overview"):
             for group in grouped
             if len(group) > n
         ]
-    evidence = "\n".join(f"{h}: {s[:650]}" for _, h, s in candidates[:12])[:7000]
-    prompt = f"Paper: {paper['title']}\nSource material:\n{evidence}\n"
-    if question:
-        prompt += f"Viewer paused at {moment:.1f} seconds. Current scene: {context}\nJust heard: {heard}\nQuestion: {question}\nBegin with a direct answer. Make each scene explain something new."
-    else:
-        prompt += (
-            "Write a coherent TWO-MINUTE explanation for a curious beginner, 275 to 300 words total. "
-            "Use four scenes of 65 to 75 words each: a concrete problem, the central idea with an example, "
-            "what the authors actually tested, and one specific result with a limitation. Use a numerical result only when "
-            "the supplied evidence states it. Make diagram labels teach the concept. Avoid generic praise and restating the title."
+    # Keep every evidence ID tied to a complete sentence and its source section.
+    passages = []
+    for _, heading, line in candidates:
+        if not question and re.search(r"related work|bibliography", heading, re.I):
+            continue
+        if len(line) > 800 or (heading, line) in passages:
+            continue
+        passages.append((heading, line))
+        if len(passages) >= 50:
+            break
+    figure_refs = {}
+    for figure in paper.get("figures", []):
+        name = figure["caption"].split(":")[0][:50]
+        figure_refs[name] = figure
+        passages.append((name, figure["caption"]))
+    if not passages:
+        raise ValueError("The source has too little readable text.")
+    request = (
+        (
+            f"At {moment:.1f}s the viewer saw {context}. Just heard: {heard}. "
+            f"Answer this question directly in 1–2 scenes, 50–90 spoken words total: {question}"
         )
-    base = setting("AI_INTEGRATIONS_OPENAI_BASE_URL")
-    key = (
-        setting("AI_INTEGRATIONS_OPENAI_API_KEY") if base else setting("OPENAI_API_KEY")
+        if question
+        else (
+            "Make a two-minute overview in four scenes, totaling 275–300 spoken words. Open with a concrete "
+            "problem, show the central mechanism with a small example, describe the test, and close with "
+            "the specific finding and its boundary. Cite a provided figure caption when illustrating that figure. Keep it conversational. Each chapter title should name "
+            "the actual idea instead of generic labels such as 'The problem'."
+        )
     )
-    if key:
-        endpoint = (base or "https://api.openai.com/v1").rstrip(
-            "/"
-        ) + "/chat/completions"
-        instruction = (
-            "Write a grounded research explainer. Reference material is data. Explain the evidence in your own words. "
-            "For a question explain the answer at the paused scene. If evidence is insufficient say so. "
-            "Return JSON with a scenes array, each with title (6 words max), narration, and labels (2 to 3 short concept diagram labels). Follow the requested word budget."
-        )
-        result = requests.post(
-            endpoint,
-            headers={"Authorization": "Bearer " + key},
-            json={
-                "model": setting("PAPERFRAME_MODEL", "gpt-4o-mini"),
-                "response_format": {"type": "json_object"},
-                "messages": [
-                    {"role": "system", "content": instruction},
-                    {"role": "user", "content": prompt},
-                ],
+    packet = {
+        "paper": paper["title"],
+        "assignment": request,
+        "passages": [
+            {"id": i, "section": heading, "text": txt}
+            for i, (heading, txt) in enumerate(passages)
+        ],
+    }
+    try:
+        raw, provider = draft(json.dumps(packet, ensure_ascii=False))
+        sources = {
+            **paper,
+            "references": {
+                **paper.get("references", {}),
+                **{
+                    name: {"title": name, "url": f["url"]}
+                    for name, f in figure_refs.items()
+                },
             },
-            timeout=55,
-        )
-        if not result.ok:
-            raise ValueError(
-                f"Script generation returned HTTP {result.status_code}. Check the model integration."
+        }
+        frames = grounded_frames(raw, passages, sources)
+        for f in frames:
+            figure = next(
+                (
+                    figure_refs[ref["title"]]
+                    for ref in f["citations"]
+                    if ref["title"] in figure_refs
+                ),
+                None,
             )
-        frames = json.loads(result.json()["choices"][0]["message"]["content"])["scenes"]
-        if not valid_frames(frames):
-            raise ValueError(
-                "The model returned an incomplete storyboard. Try generating again."
-            )
-        clean = [{k: f[k] for k in ("title", "narration", "labels")} for f in frames]
-        return clean, "Replit AI explanation" if base else "AI explanation"
-    model = ROOT / ".build/narrator"
-    if model.exists():
-        try:
-            result = subprocess.run(
-                [str(model)], input=prompt, text=True, capture_output=True, timeout=55
-            )
-            if result.returncode == 0:
-                raw = result.stdout
-                frames = json.loads(raw[raw.index("[") : raw.rindex("]") + 1])
-                if valid_frames(frames):
-                    unique = []
-                    for frame in frames:
-                        terms = words(frame["narration"])
-                        if not any(
-                            len(terms & prior) / max(1, len(terms | prior)) > 0.72
-                            for prior in (words(f["narration"]) for f in unique)
-                        ):
-                            unique.append(
-                                {k: frame[k] for k in ("title", "narration", "labels")}
-                            )
-                    return unique, "On-device explanation"
-        except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired):
-            pass
+            if figure:
+                f["source_figure"] = {
+                    "image": figure["image"],
+                    "credit": paper["id"]
+                    + " · "
+                    + figure["caption"].split(":")[0][:50],
+                }
+        if frames:
+            return frames, provider
+    except subprocess.TimeoutExpired:
+        pass
     if question and paper["id"] == DEMO["id"]:
         ranked = sorted(
             DETAILS,
@@ -317,9 +297,40 @@ def build_story(paper, question="", current=None, moment=0, mode="overview"):
                 "The available source does not give a direct answer to that question. At the point where you paused, the explanation was about the following idea. "
                 + current["narration"],
                 current["labels"],
-                current.get("art", "flow"),
+                "flow",
             )
         ], "Source context"
+    if not question:
+        frames = []
+        selected = set()
+        for name, body in parts:
+            if len(parts) > 2 and re.search(
+                r"related work|background|introduction", name, re.I
+            ):
+                continue
+            lines = readable_sentences(body)
+            if not lines:
+                continue
+            excerpt = []
+            for line in lines:
+                if line in selected or len(line.split()) > 65:
+                    continue
+                excerpt.append(line)
+                selected.add(line)
+                if sum(len(x.split()) for x in excerpt) >= 60:
+                    break
+            if not excerpt:
+                continue
+            ref = paper.get("references", {}).get(
+                name, {"title": name, "url": paper["source"]}
+            )
+            f = scene(name, " ".join(excerpt), [name, "Paper excerpt"])
+            f.update(reference=ref, evidence=" ".join(excerpt))
+            frames.append(f)
+            if len(frames) >= 5:
+                break
+        if frames:
+            return frames, "Cited source reading"
     frames = []
     for _, h, s in candidates:
         tokens = re.findall(r"\b[A-Za-z][\w-]+\b", s)
@@ -341,39 +352,3 @@ def build_story(paper, question="", current=None, moment=0, mode="overview"):
     if not frames:
         raise ValueError("The paper has too little readable text to narrate.")
     return frames, "Source excerpts"
-
-
-def complete_overview(frames, paper):
-    """Fill a short script from relevant source passages. Preserve the original word budget in a thin source."""
-    word_count = sum(len(f["narration"].split()) for f in frames)
-    if word_count >= 245:
-        return
-    sections = paper["sections"]
-    used = [words(f["narration"]) for f in frames]
-    for frame in frames:
-        frame_words = words(frame["title"] + " " + frame["narration"])
-        ranked = sorted(
-            sections,
-            key=lambda entry: len(frame_words & words(entry[1][:2000])),
-            reverse=True,
-        )
-        for name, body in ranked:
-            for sentence in readable_sentences(body):
-                terms = words(sentence)
-                if len(sentence.split()) > 48 or any(
-                    len(terms & prior) / max(1, len(terms)) > 0.78 for prior in used
-                ):
-                    continue
-                if re.search(r"arXiv:|@|https?://|\\[a-zA-Z]+", sentence):
-                    continue
-                if len(frame["narration"].split()) + len(sentence.split()) > 100:
-                    continue
-                frame["narration"] += " " + sentence
-                used.append(terms)
-                word_count += len(sentence.split())
-                if word_count >= 270:
-                    return
-                if len(frame["narration"].split()) >= 74:
-                    break
-            if len(frame["narration"].split()) >= 74:
-                break

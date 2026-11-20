@@ -26,6 +26,11 @@ SCENES = [
         ["Parallel encoding", "Translation test", "28.4 BLEU"],
     ),
 ]
+# The animation changes at these phrases in the recorded narration.
+SCENES[0].update(art="referent", beats=["You probably chose", "But change tired"])
+SCENES[1].update(art="mix", beats=["Comparing the query", "The model then blends"])
+SCENES[2]["beats"] = ["Each attention head", "The model combines"]
+SCENES[3].update(art="translation", beats=["Attention lets", "In the paper's English"])
 DETAILS = [
     (
         "example pronoun animal it reference simple analogy",
@@ -170,3 +175,18 @@ DEEP = [
         "S4",
     ),
 ]
+
+for frame, tex in zip(
+    DEEP,
+    [
+        r"Q=XW^Q,\quad K=XW^K,\quad V=XW^V",
+        r"S=\frac{QK^\mathsf{T}}{\sqrt{d_k}}",
+        r"\frac{1}{4}(4,0)+\frac{3}{4}(0,8)=(1,6)",
+        r"\mathrm{MultiHead}=\mathrm{Concat}(h_1,\ldots,h_8)W^O",
+        r"j>i\quad\Rightarrow\quad S_{ij}=-\infty\quad\Rightarrow\quad A_{ij}=0",
+        r"\mathrm{SelfAttention}:O(n^2d)\qquad\mathrm{Recurrent}:O(nd^2)",
+    ],
+):
+    frame["tex"] = tex
+    DEMO["references"][frame["title"]] = frame["reference"]
+    DEMO["sections"].append((frame["title"], frame["narration"]))

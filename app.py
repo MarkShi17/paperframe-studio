@@ -66,10 +66,6 @@ def generate(job, data):
         else:
             update(job, label="Writing the illustrated explanation")
             scenes, method = build_story(paper, question, current, moment, mode)
-            if mode == "overview" and not question:
-                from studio import complete_overview
-
-                complete_overview(scenes, paper)
             assign_references(scenes, paper)
             film = render(
                 job,

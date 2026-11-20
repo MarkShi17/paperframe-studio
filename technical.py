@@ -1,9 +1,12 @@
 """Build the technical track from the paper's equations and cited passages."""
 
+import json
 import re
+import subprocess
 
 from bs4 import NavigableString
 from demo import DEEP, DEMO, scene
+from scriptwriter import draft, grounded_frames
 
 
 def text_without_math_markup(node):
@@ -137,4 +140,44 @@ def technical_story(paper):
         raise ValueError(
             "The readable sections contain too little technical evidence for a deep dive."
         )
+    references = {f["title"]: f["reference"] for f in frames}
+    passages = [(f["title"], f["evidence"]) for f in frames]
+    prompt = {
+        "paper": paper["title"],
+        "assignment": (
+            "Build a technical deep dive. Choose a length based on the mathematical content. Start with the inputs, "
+            "define the symbols needed for the paper's main mechanism, walk through its operation, and connect "
+            "it to the test and a limitation if supported. Use one scene per distinct concept. When a numbered "
+            "equation is provided, explain what its terms and dimensions do in plain English. Cite its passage ID "
+            "FIRST for the matching scene so the player can display the exact source equation. "
+            "If the evidence contains no equation, explain the method and assumptions directly. Never invent a formula."
+        ),
+        "passages": [
+            {
+                "id": i,
+                "section": f["title"],
+                "text": f["evidence"],
+                "equation": f.get("tex", ""),
+            }
+            for i, f in enumerate(frames)
+        ],
+    }
+    try:
+        raw, method = draft(json.dumps(prompt, ensure_ascii=False))
+        generated = grounded_frames(raw, passages, {**paper, "references": references})
+    except subprocess.TimeoutExpired:
+        generated = []
+    if generated:
+        for f in generated:
+            original = next(
+                (
+                    source
+                    for source in frames
+                    if source["reference"]["url"] == f["reference"]["url"]
+                ),
+                None,
+            )
+            if original and original.get("tex"):
+                f["tex"] = original["tex"]
+        return generated, method + " · technical track"
     return frames, "Cited technical reading"
